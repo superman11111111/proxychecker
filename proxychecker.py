@@ -110,8 +110,8 @@ def server(host: str, port: int):
         working_json = json.loads(f.read())
         f.close()
         if n:
-            return working_json[:n]
-        return working_json
+            return jsonify(working_json[:n])
+        return jsonify(working_json)
 
     print(f' * Running Flask on http://{host}:{port}')
     app.run(host, port)
