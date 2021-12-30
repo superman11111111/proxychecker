@@ -46,7 +46,9 @@ def consume_queue(proxies: list, q: Queue, stop_event: Event):
     print()
     print('Saving Proxies')
     sort = sorted(working, key=lambda x: x[0])
-    open('working.json', 'w').write(json.dumps(sort))
+    f = open('working.json', 'w')
+    f.write(json.dumps(sort))
+    f.close()
 
 
 # Example run : echo -ne "192.168.1.1:231\n192.168.1.2:231" | python proxy_checkpy3-async.py
@@ -104,8 +106,12 @@ def server(host: str, port: int):
                 n = int(n)
             except:
                 return "Wrong parameter n (use int)"
-            return jsonify(json.loads(open('working.json', 'r').read())[:n])
-        return jsonify(json.loads(open('working.json', 'r').read()))
+        f = open('working.json', 'r')
+        working_json = json.loads(f.read())
+        f.close()
+        if n:
+            return working_json[:n]
+        return working_json
 
     print(f' * Running Flask on http://{host}:{port}')
     app.run(host, port)
