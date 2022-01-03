@@ -1,4 +1,5 @@
 import argparse
+import re
 import sys
 import urllib.request
 import socket
@@ -9,6 +10,8 @@ import json
 import os
 
 socket.setdefaulttimeout(30)
+CHECKING_STARTED = False
+CHECKING_THREAD = None
 
 
 def check_proxy(pip, out_queue: Queue):
@@ -84,28 +87,48 @@ def start_checking(proxy_file='proxies.txt'):
         # time.sleep(60)
 
 
+def toggle_checking():
+    global CHECKING_STARTED, CHECKING_THREAD
+    if CHECKING_STARTED:
+        CHECKING_THREAD.join()
+        CHECKING_THREAD = None
+    else:
+        CHECKING_THREAD = Thread(target=start_checking)
+        CHECKING_THREAD.start()
+    CHECKING_STARTED = not CHECKING_STARTED
+    return CHECKING_STARTED
+
+
 def server(host: str, port: int):
-    from flask import Flask, jsonify, request
+    from flask import Flask, jsonify, request, abort, redirect 
     import logging
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
 
     app = Flask(__name__)
 
-    @app.route("/")
+
+    @app.route("/", methods=['GET', 'POST'])
     def index():
-        return "<p>Hello, World!</p>"
+        if request.method == 'GET': 
+            global CHECKING_STARTED
+            return f"<form action='/', method='post'><input type='submit' value='running={CHECKING_STARTED}'></form>"
+        elif request.method == 'POST':
+            status = toggle_checking()
+            return redirect('/')
+        else: 
+            return abort(400)
 
     @app.route("/api/working")
     def working():
         n = request.args.get('n')
-        # print(n)
-        # os.path.getmtime('working.json')
         if n:
             try:
                 n = int(n)
             except:
                 return "Wrong parameter n (use int)"
+        if not os.path.isfile('working.json'):
+            return "Proxy check still running, Try again later"
         f = open('working.json', 'r')
         working_json = json.loads(f.read())
         f.close()
@@ -123,7 +146,4 @@ parser.add_argument('-ho', '--host', type=str,
 parser.add_argument('-p', '--port', type=int, help='Port', default=4001)
 
 args = parser.parse_args()
-check_thread = Thread(target=start_checking)
-check_thread.start()
 server(args.host, args.port)
-check_thread.join()
