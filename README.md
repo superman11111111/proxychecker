@@ -1,4 +1,4 @@
-## ProxyChecker - Threaded Proxy Checker
+# ProxyChecker - Threaded Proxy Checker with anonymity checks
 
 Check proxies.txt and serve list of working ones at /api/working
 
@@ -16,7 +16,7 @@ Returns the headers of the request sent by the client (not json).
 
 ### Anonymity Checking
 
-Requests /api/headers over proxy, then if headers contain X-Forwarded-For, proxy no good
+Requests /api/headers over proxy, if headers contain X-Forwarded-For, proxy no good
 
 ## TODO
 

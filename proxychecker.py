@@ -63,6 +63,10 @@ def start_checking(proxy_file="proxies.txt"):
             qu.put((time.time() - start, pip))
 
     def consume_queue():
+        if os.path.isfile("working_info.json"):
+            with open("working_info.json", "r") as f:
+                old_working = json.loads(f.read())
+                f.close()
         working = []
         i = 0
         while True:
@@ -72,8 +76,13 @@ def start_checking(proxy_file="proxies.txt"):
                 t, pip = qu.get(block=False)
                 _print = f"{i}/{n_proxies} {round(t, 4)} {pip}  "
                 print(f"\r{_print}{(50 - len(_print))*' '}", end="")
-                working.append((t, pip, NOT_ANON_FLAG))
                 i += 1
+                old_working_pips = [x[1] for x in old_working]
+                if pip in old_working_pips:
+                    idx = old_working_pips.index(pip)
+                    working.append((t, pip, old_working[idx][2]))
+                else:
+                    working.append((t, pip, NOT_ANON_FLAG))
             time.sleep(0.01)
         print()
         print("Saving Proxies to working_info.json")
