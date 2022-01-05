@@ -65,8 +65,9 @@ def start_checking(proxy_file="proxies.txt"):
     def consume_queue():
         if os.path.isfile("working_info.json"):
             with open("working_info.json", "r") as f:
-                old_working = json.loads(f.read())
+                _r = f.read()
                 f.close()
+            old_working = json.loads(_r)
         working = []
         i = 0
         while True:
@@ -144,9 +145,9 @@ def start_anon_checking():
             if not qu.empty():
                 good.append(qu.get(block=False))
             time.sleep(0.01)
-        f = open("working_info.json", "r")
-        _r = f.read()
-        f.close()
+        with open("working_info.json", "r") as f:
+            _r = f.read()
+            f.close()
         working_proxies = json.loads(_r)
         working_info = []
         for tt, proxy, _ in working_proxies:
@@ -156,9 +157,10 @@ def start_anon_checking():
                 working_info.append((tt, proxy, "not_anon"))
         working_info.sort(key=lambda x: x[0])
         print("Writing anonymity infos to file")
-        f = open("working_info.json", "w")
-        f.write(json.dumps(working_info))
-        f.close()
+        working_info_json = json.dumps(working_info)
+        with open("working_info.json", "w") as f:
+            f.write(working_info_json)
+            f.close()
 
     while True:
         working_url = f"http://127.0.0.1:{PORT}/api/working?type=all"
@@ -244,9 +246,9 @@ def server(host: str):
         if type not in types:
             return f"Invalid type, please use type from {types}"
 
-        f = open("working_info.json", "r")
-        _read = f.read()
-        f.close()
+        with open("working_info.json", "r") as f:
+            _read = f.read()
+            f.close()
         working_json = json.loads(_read)
         if type == "anon":
             working_json = [x for x in working_json if x[2] == "anon"]
