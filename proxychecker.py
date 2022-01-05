@@ -135,7 +135,6 @@ def start_anon_checking():
             if not qu.empty():
                 good.append(qu.get(block=False))
             time.sleep(0.01)
-        print(good)
         f = open("working_info.json", "r")
         _r = f.read()
         f.close()
