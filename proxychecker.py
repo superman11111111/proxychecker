@@ -70,7 +70,8 @@ def start_checking(proxy_file="proxies.txt"):
                 break
             if not qu.empty():
                 t, pip = qu.get(block=False)
-                print(f"\r{i}/{n_proxies} {t} {pip}  ", end="")
+                _print = f"{i}/{n_proxies} {t} {pip}  "
+                print(f"\r{_print}{(50 - len(_print))*' '}", end="")
                 working.append((t, pip, NOT_ANON_FLAG))
                 i += 1
             time.sleep(0.01)
@@ -147,7 +148,9 @@ def start_anon_checking():
                 working_info.append((tt, proxy, "not_anon"))
         working_info.sort(key=lambda x: x[0])
         print("Writing anonymity infos to file")
-        open("working_info.json", "w").write(json.dumps(working_info))
+        f = open("working_info.json", "w")
+        f.write(json.dumps(working_info))
+        f.close()
 
     while True:
         working_url = f"http://127.0.0.1:{PORT}/api/working?type=all"
@@ -191,7 +194,7 @@ def toggle_checking():
         ANONCHECKING_THREAD = None
     else:
         CHECKING_THREAD = Thread(target=start_checking)
-        # CHECKING_THREAD.start()
+        CHECKING_THREAD.start()
         ANONCHECKING_THREAD = Thread(target=start_anon_checking)
         ANONCHECKING_THREAD.start()
     CHECKING_STARTED = not CHECKING_STARTED
@@ -234,8 +237,9 @@ def server(host: str):
             return f"Invalid type, please use type from {types}"
 
         f = open("working_info.json", "r")
-        working_json = json.loads(f.read())
+        _read = f.read()
         f.close()
+        working_json = json.loads(_read)
         if type == "anon":
             working_json = [x for x in working_json if x[2] == "anon"]
         if n:
