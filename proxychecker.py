@@ -10,7 +10,7 @@ import json
 import os
 
 # Settings
-PUBLIC_IP = ""  # IP of the server running this script, I am not automating this for security reasons
+PUBLIC_IP = ""  # Public IP of the server running this script, I am not automating this for security reasons
 PROXY_CHECK_URL = "https://www.myip.com/"
 TIMEOUT = 30
 
@@ -21,6 +21,12 @@ ANON_FLAG = "anon"
 CHECKING_STARTED = False
 CHECKING_THREAD = None
 ANONCHECKING_THREAD = None
+PORT = 0
+HTTP_ERRORS = ""
+# HTTP_ERRORS = "error.log" # Uncomment to log HTTP errors
+if HTTP_ERRORS:
+    if not os.path.isfile(HTTP_ERRORS):
+        open(HTTP_ERRORS, "w").write("")
 
 socket.setdefaulttimeout(TIMEOUT)
 
@@ -31,8 +37,9 @@ def get(url, proxy_data=dict()):
         opener = urllib.request.build_opener(proxy_handler)
         opener.addheaders = [("User-agent", "Mozilla/5.0")]
         return opener.open(url)
-    except Exception:
-        pass
+    except Exception as e:
+        if HTTP_ERRORS:
+            open(HTTP_ERRORS, "a").write(str(e))
     return None
 
 
@@ -107,15 +114,15 @@ def start_anon_checking():
     def check_anon(pip: str):
         try:
             # start_t = time.time()
-            global ANON_CHECK_URL
-            req = get(ANON_CHECK_URL, proxies={"http": pip, "https": pip})
-            if isinstance(req, urllib.request._UrlopenRet):
-                text = req.read()
-                if "X-Forwarded-For" in text:
-                    return
-            else:
+            # print(ANON_CHECK_URL)
+            req = get(ANON_CHECK_URL, proxy_data={"http": pip, "https": pip})
+            if not req:
                 return
-        except Exception:
+            text = req.read().decode("utf-8")
+            if "X-Forwarded-For" in text:
+                return
+        except Exception as e:
+            print(e)
             return
         qu.put(pip)
 
@@ -127,6 +134,7 @@ def start_anon_checking():
             if not qu.empty():
                 good.append(qu.get(block=False))
             time.sleep(0.01)
+        print(good)
         f = open("working_info.json", "r")
         _r = f.read()
         f.close()
@@ -142,13 +150,13 @@ def start_anon_checking():
         open("working_info.json", "w").write(json.dumps(working_info))
 
     while True:
-        working_url = "http://127.0.0.1:4001/api/working?type=all"
+        working_url = f"http://127.0.0.1:{PORT}/api/working?type=all"
         req = get(working_url)
         if not req:
             print(f"No working data from {working_url}, retrying in 1")
             time.sleep(1)
             continue
-        _read = req.read()
+        _read = req.read().decode("utf-8")
         try:
             proxies = json.loads(_read)
         except json.JSONDecodeError:
@@ -183,14 +191,14 @@ def toggle_checking():
         ANONCHECKING_THREAD = None
     else:
         CHECKING_THREAD = Thread(target=start_checking)
-        CHECKING_THREAD.start()
+        # CHECKING_THREAD.start()
         ANONCHECKING_THREAD = Thread(target=start_anon_checking)
         ANONCHECKING_THREAD.start()
     CHECKING_STARTED = not CHECKING_STARTED
     return CHECKING_STARTED
 
 
-def server(host: str, port: int):
+def server(host: str):
     from flask import Flask, jsonify, request, abort, redirect
 
     cli = sys.modules["flask.cli"]
@@ -201,7 +209,7 @@ def server(host: str, port: int):
     def index():
         if request.method == "GET":
             global CHECKING_STARTED
-            return f"<form action='/', method='post'><input type='submit' value='running={CHECKING_STARTED}'></form>"
+            return f"<form action='/', method='post'><input style='height: 50%; width: 50%; font: small-caps bold 1000%/200% monospace;' type='submit' value='running={CHECKING_STARTED}'></form>"
         elif request.method == "POST":
             status = toggle_checking()
             return redirect("/")
@@ -256,12 +264,13 @@ def server(host: str, port: int):
         print(open("flask.log", "r").read().split("\n")[-2], flush=True)
 
     Thread(target=console).start()
-    app.run(host, port)
+    app.run(host, PORT)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-ho", "--host", type=str, help="Hostname", default="0.0.0.0")
 parser.add_argument("-p", "--port", type=int, help="Port", default=4000)
 args = parser.parse_args()
-ANON_CHECK_URL = f"http://{PUBLIC_IP}:{args.port}/api/headers/"
-server(args.host, args.port)
+PORT = args.port
+ANON_CHECK_URL = f"http://{PUBLIC_IP}:{PORT}/api/headers"
+server(args.host)
