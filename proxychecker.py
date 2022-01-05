@@ -11,7 +11,7 @@ import json
 import os
 
 # Settings
-PUBLIC_IP = ""  # Public IP of the server running this script, I am not automating this for security reasons
+CHECK_PIP = ":4000"  # Public IP of the machine serving /api/headers, I am not automating this for security reasons
 PROXY_CHECK_URL = "https://www.myip.com/"
 TIMEOUT = 30
 
@@ -51,16 +51,20 @@ class FileHandler:
                 return fh
         return FileHandler(path)
 
-    def read(self, block=True) -> str:
+    def open(self, mode, block=True):
         if self.lock.acquire(blocking=block):
-            with open(self.path, "r") as f:
-                _read = f.read()
-            return _read
+            return open(self.path, mode)
+
+    def read(self, block=True) -> str:
+        with self.open("r", block=block) as f:
+            _read = f.read()
+        self.lock.release()
+        return _read
 
     def write(self, text: str, block=True) -> None:
-        if self.lock.acquire(blocking=block):
-            with open(self.path, "w") as f:
-                f.write(text)
+        with self.open("w", block=block) as f:
+            f.write(text)
+        self.lock.release()
 
 
 def get(url, proxy_data=dict()):
@@ -121,8 +125,7 @@ def start_checking(proxy_file="proxies.txt"):
         print()
         print(f"Saving Proxies to {WORKING_JSON_FH.path}")
         working.sort(key=lambda x: x[0])
-        working_json = json.dumps(working)
-        WORKING_JSON_FH.write(working_json)
+        WORKING_JSON_FH.write(json.dumps(working))
 
     while True:
         proxies = open(proxy_file, "r").read().split("\n")
@@ -146,7 +149,6 @@ def start_checking(proxy_file="proxies.txt"):
 
 def start_anon_checking():
     time.sleep(2)
-    print("Starting anonymity checks")
     qu = Queue()
     stop_event = Event()
     proxies = None
@@ -173,23 +175,20 @@ def start_anon_checking():
             if not qu.empty():
                 good.append(qu.get(block=False))
             time.sleep(0.01)
-        # _read = WORKING_JSON_FH.read()
-        # working_proxies = json.loads(_r)
-        working_info = []
+        working = []
         for tt, proxy, type in proxies:
             if proxy in good:
-                working_info.append((tt, proxy, ANON_FLAG))
+                working.append((tt, proxy, ANON_FLAG))
             else:
-                working_info.append((tt, proxy, NOT_ANON_FLAG))
-        working_info.sort(key=lambda x: x[0])
-        print("Writing anonymity infos to file")
-        WORKING_JSON_FH.write(json.dumps(working_info))
+                working.append((tt, proxy, NOT_ANON_FLAG))
+        working.sort(key=lambda x: x[0])
+        # print("Writing anonymity infos to file")
+        WORKING_JSON_FH.write(json.dumps(working))
 
     while True:
         working_url = f"http://127.0.0.1:{PORT}/api/working?type=all"
         req = get(working_url)
         if not req:
-            print(f"No working data from {working_url}, retrying in 1")
             time.sleep(1)
             continue
         _read = req.read().decode("utf-8")
@@ -197,7 +196,10 @@ def start_anon_checking():
             proxies = json.loads(_read)
         except json.JSONDecodeError:
             # print(_read)
+            time.sleep(1)
             continue
+        print()
+        print("Running anonymity checks")
         n_proxies = len(proxies)
         threads = []
         for i in range(n_proxies):
@@ -263,11 +265,12 @@ def server(host: str):
         types = ["all", "anon"]
         type = request.args.get("type")
 
-        if type not in types:
-            return f"Invalid type, please use type from {types}"
-
-        if type == "anon":
+        if type == "all" or not type:
+            pass
+        elif type == "anon":
             working_json = [x for x in working_json if x[2] == "anon"]
+        else:
+            return f"Invalid type, please use type from {types}"
         return jsonify(working_json)
 
     @app.route("/api/working/")
@@ -297,8 +300,9 @@ def server(host: str):
 parser = argparse.ArgumentParser()
 parser.add_argument("-ho", "--host", type=str, help="Hostname", default="0.0.0.0")
 parser.add_argument("-p", "--port", type=int, help="Port", default=4000)
+# parser.add_argument("-l", '--local', help="Local Anonymity checking", action="store_true")
 args = parser.parse_args()
 PORT = args.port
-ANON_CHECK_URL = f"http://{PUBLIC_IP}:{PORT}/api/headers"
+ANON_CHECK_URL = f"http://{CHECK_PIP}/api/headers"
 WORKING_JSON_FH = FileHandler.create("working.json")
 server(args.host)
