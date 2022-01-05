@@ -70,7 +70,7 @@ def start_checking(proxy_file="proxies.txt"):
                 break
             if not qu.empty():
                 t, pip = qu.get(block=False)
-                _print = f"{i}/{n_proxies} {t} {pip}  "
+                _print = f"{i}/{n_proxies} {round(t, 4)} {pip}  "
                 print(f"\r{_print}{(50 - len(_print))*' '}", end="")
                 working.append((t, pip, NOT_ANON_FLAG))
                 i += 1
