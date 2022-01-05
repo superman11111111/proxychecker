@@ -8,8 +8,6 @@ GET Parameters:
 
 - type: str # Type of proxy to return (Currently either [all, anon], not optional)
 
-- n: int # Number of Proxies to return (optional, leaving it returns all)
-
 ### /api/headers
 
 Returns the headers of the request sent by the client (not json).

@@ -1,9 +1,10 @@
 import argparse
+from json.decoder import JSONDecodeError
 import re
 import sys
 import urllib.request
 import socket
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from queue import Queue
 import time
 import json
@@ -22,13 +23,44 @@ CHECKING_STARTED = False
 CHECKING_THREAD = None
 ANONCHECKING_THREAD = None
 PORT = 0
+WORKING_JSON_FH = None
 HTTP_ERRORS = ""
 # HTTP_ERRORS = "error.log" # Uncomment to log HTTP errors
 if HTTP_ERRORS:
     if not os.path.isfile(HTTP_ERRORS):
         open(HTTP_ERRORS, "w").write("")
-
 socket.setdefaulttimeout(TIMEOUT)
+
+
+class FileHandler:
+    __FILEHANDLERS = []
+
+    def __init__(self, path) -> None:
+        self.path = path
+        self.lock = Lock()
+        self.__class__.__FILEHANDLERS.append(self)
+
+    @classmethod
+    def create(cls, path):
+        if not os.path.isfile(path):
+            with open(path, "w"):
+                pass
+            # print(f"[{cls.__name__}] Not a file: {path}")
+        for fh in cls.__FILEHANDLERS:
+            if fh.path == path:
+                return fh
+        return FileHandler(path)
+
+    def read(self, block=True) -> str:
+        if self.lock.acquire(blocking=block):
+            with open(self.path, "r") as f:
+                _read = f.read()
+            return _read
+
+    def write(self, text: str, block=True) -> None:
+        if self.lock.acquire(blocking=block):
+            with open(self.path, "w") as f:
+                f.write(text)
 
 
 def get(url, proxy_data=dict()):
@@ -63,11 +95,12 @@ def start_checking(proxy_file="proxies.txt"):
             qu.put((time.time() - start, pip))
 
     def consume_queue():
-        if os.path.isfile("working_info.json"):
-            with open("working_info.json", "r") as f:
-                _r = f.read()
-                f.close()
-            old_working = json.loads(_r)
+        old_working = []
+        _read = WORKING_JSON_FH.read()
+        try:
+            old_working = json.loads(_read)
+        except JSONDecodeError:
+            pass
         working = []
         i = 0
         while True:
@@ -78,20 +111,18 @@ def start_checking(proxy_file="proxies.txt"):
                 _print = f"{i}/{n_proxies} {round(t, 4)} {pip}  "
                 print(f"\r{_print}{(50 - len(_print))*' '}", end="")
                 i += 1
-                old_working_pips = [x[1] for x in old_working]
-                if pip in old_working_pips:
-                    idx = old_working_pips.index(pip)
-                    working.append((t, pip, old_working[idx][2]))
-                else:
-                    working.append((t, pip, NOT_ANON_FLAG))
-            time.sleep(0.01)
+                if old_working:
+                    old_working_pips = [x[1] for x in old_working]
+                    if pip in old_working_pips:
+                        idx = old_working_pips.index(pip)
+                        working.append((t, pip, old_working[idx][2]))
+                        continue
+                working.append((t, pip, NOT_ANON_FLAG))
         print()
-        print("Saving Proxies to working_info.json")
+        print(f"Saving Proxies to {WORKING_JSON_FH.path}")
         working.sort(key=lambda x: x[0])
         working_json = json.dumps(working)
-        f = open("working_info.json", "w")
-        f.write(working_json)
-        f.close()
+        WORKING_JSON_FH.write(working_json)
 
     while True:
         proxies = open(proxy_file, "r").read().split("\n")
@@ -115,17 +146,14 @@ def start_checking(proxy_file="proxies.txt"):
 
 def start_anon_checking():
     time.sleep(2)
-    while not os.path.isfile("working_info.json"):
-        time.sleep(1)
     print("Starting anonymity checks")
     qu = Queue()
     stop_event = Event()
+    proxies = None
     n_proxies = 0
 
     def check_anon(pip: str):
         try:
-            # start_t = time.time()
-            # print(ANON_CHECK_URL)
             req = get(ANON_CHECK_URL, proxy_data={"http": pip, "https": pip})
             if not req:
                 return
@@ -145,22 +173,17 @@ def start_anon_checking():
             if not qu.empty():
                 good.append(qu.get(block=False))
             time.sleep(0.01)
-        with open("working_info.json", "r") as f:
-            _r = f.read()
-            f.close()
-        working_proxies = json.loads(_r)
+        # _read = WORKING_JSON_FH.read()
+        # working_proxies = json.loads(_r)
         working_info = []
-        for tt, proxy, _ in working_proxies:
+        for tt, proxy, type in proxies:
             if proxy in good:
-                working_info.append((tt, proxy, "anon"))
+                working_info.append((tt, proxy, ANON_FLAG))
             else:
-                working_info.append((tt, proxy, "not_anon"))
+                working_info.append((tt, proxy, NOT_ANON_FLAG))
         working_info.sort(key=lambda x: x[0])
         print("Writing anonymity infos to file")
-        working_info_json = json.dumps(working_info)
-        with open("working_info.json", "w") as f:
-            f.write(working_info_json)
-            f.close()
+        WORKING_JSON_FH.write(json.dumps(working_info))
 
     while True:
         working_url = f"http://127.0.0.1:{PORT}/api/working?type=all"
@@ -231,13 +254,10 @@ def server(host: str):
 
     @app.route("/api/working")
     def working():
-        n = request.args.get("n")
-        if n:
-            try:
-                n = int(n)
-            except:
-                return "Wrong parameter n (use int)"
-        if not os.path.isfile("working_info.json"):
+        _read = WORKING_JSON_FH.read()
+        try:
+            working_json = json.loads(_read)
+        except JSONDecodeError:
             return "No data exists, Retry later"
 
         types = ["all", "anon"]
@@ -246,14 +266,8 @@ def server(host: str):
         if type not in types:
             return f"Invalid type, please use type from {types}"
 
-        with open("working_info.json", "r") as f:
-            _read = f.read()
-            f.close()
-        working_json = json.loads(_read)
         if type == "anon":
             working_json = [x for x in working_json if x[2] == "anon"]
-        if n:
-            return jsonify(working_json[:n])
         return jsonify(working_json)
 
     @app.route("/api/working/")
@@ -268,7 +282,6 @@ def server(host: str):
     def red_headers():
         return redirect("/api/headers")
 
-    # print(f" * Running Flask on http://{host}:{port}")
     import logging
 
     logging.basicConfig(filename="flask.log", level=logging.DEBUG)
@@ -287,4 +300,5 @@ parser.add_argument("-p", "--port", type=int, help="Port", default=4000)
 args = parser.parse_args()
 PORT = args.port
 ANON_CHECK_URL = f"http://{PUBLIC_IP}:{PORT}/api/headers"
+WORKING_JSON_FH = FileHandler.create("working.json")
 server(args.host)
