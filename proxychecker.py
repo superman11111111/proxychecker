@@ -163,7 +163,7 @@ def start_anon_checking():
             if "X-Forwarded-For" in text:
                 return
         except Exception as e:
-            print(e)
+            # print(e)
             return
         qu.put(pip)
 
@@ -191,10 +191,10 @@ def start_anon_checking():
         if not req:
             time.sleep(1)
             continue
-        _read = req.read().decode("utf-8")
         try:
+            _read = req.read().decode("utf-8")
             proxies = json.loads(_read)
-        except json.JSONDecodeError:
+        except Exception:
             # print(_read)
             time.sleep(1)
             continue
